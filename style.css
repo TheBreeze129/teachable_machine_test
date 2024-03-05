@@ -17,10 +17,22 @@ video {
   height: 480px;
 }
 
-button {
-  padding: 10px;
-  float: left;
-  margin: 5px 3px 5px 10px;
+.dataCollector {
+  border: none;
+  background-color: #2196F3;
+  color: white;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  border-radius: 20px; /* 둥근 사각형 모양을 위한 border-radius */
+  margin-right: 10px; /* 슬라이더와의 간격 설정 */
+}
+
+button:disabled {
+  background-color: #cccccc; /* 회색 */
+  /* 기타 스타일 지정 가능 */
 }
 
 .removed {
@@ -29,4 +41,84 @@ button {
 
 #status {
   font-size:150%;
+}
+
+.container {
+  display: flex;
+  align-items: center;
+}
+
+#webcam {
+  background-size: cover;
+}
+
+.row {
+  display: flex;
+  flex-direction: row; /* 요소를 가로로 배치 */
+  align-items: center;
+  margin: 10px;
+}
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.horizontal-line {
+  border: none;
+  border-top: 1px solid #000; /* 선 색상과 두께 지정 */
+  margin: 20px 0; /* 위아래 여백 지정 */
+}
+
+/* 슬라이더 스타일 */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+
+.switch input {
+  display: none;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 34px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+/* 슬라이더 버튼 모양 */
+.slider.round {
+  border-radius: 34px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
 }

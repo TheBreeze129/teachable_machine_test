@@ -4,30 +4,75 @@ const ENABLE_CAM_BUTTON = document.getElementById('enableCam');
 const RESET_BUTTON = document.getElementById('reset');
 const TRAIN_BUTTON = document.getElementById('train');
 const SERIAL_BUTTON = document.getElementById('serial');
-const A_BUTTON = document.getElementById('a');
-const B_BUTTON = document.getElementById('b');
 const MOBILE_NET_INPUT_WIDTH = 224;
 const MOBILE_NET_INPUT_HEIGHT = 224;
 const STOP_DATA_GATHER = -1;
 const CLASS_NAMES = [];
+const SLIDER_1 = document.getElementById('toggleSlider1');
+const SLIDER_2 = document.getElementById('toggleSlider2')
 var highestIndex = 3;
 var writer = null;
+var isSerialOpened = false;
+let mobilenet = undefined;
+let gatherDataState = STOP_DATA_GATHER;
+let videoPlaying = false;
+let trainingDataInputs = [];
+let trainingDataOutputs = [];
+let examplesCount = [];
+let predict = false;
 
 ENABLE_CAM_BUTTON.addEventListener('click', enableCam);
 TRAIN_BUTTON.addEventListener('click', trainAndPredict);
 RESET_BUTTON.addEventListener('click', reset);
 SERIAL_BUTTON.addEventListener('click',serial_connect);
-A_BUTTON.addEventListener('click', do_a);
-B_BUTTON.addEventListener('click', do_b);
 
-async function do_a() {
-  await writer.write('a');
+const sliders = document.querySelectorAll('.switch input[type="checkbox"]');
+
+VIDEO.style.backgroundImage = 'url(./load.png)';
+
+// 각각의 슬라이더에 대해 이벤트를 등록합니다.
+sliders.forEach((slider, index) => {
+  // 슬라이더의 상태가 변경될 때마다 실행되는 함수를 정의합니다.
+  slider.addEventListener('change', function() {
+      // 슬라이더의 상태에 따라 데이터 수집 버튼의 활성화 여부를 설정합니다.
+      if (this.checked) {
+          // 슬라이더가 활성화된 경우 해당하는 데이터 수집 버튼을 활성화합니다.
+          dataCollectorButtons[index].disabled = false;
+      } else {
+          // 슬라이더가 비활성화된 경우 해당하는 데이터 수집 버튼을 비활성화합니다.
+          dataCollectorButtons[index].disabled = true;
+      }
+  });
+});
+
+let dataCollectorButtons = document.querySelectorAll('button.dataCollector');
+for (let i = 0; i < dataCollectorButtons.length; i++) {
+  dataCollectorButtons[i].addEventListener('mousedown', gatherDataForClass);
+  dataCollectorButtons[i].addEventListener('mouseup', gatherDataForClass);
+  // Populate the human readable names for classes.
+  CLASS_NAMES.push(dataCollectorButtons[i].getAttribute('data-name'));
+  dataCollectorButtons[i].disabled = true;
 }
 
-async function do_b() {
-  await writer.write('b');
-}
+// Call the function immediately to start loading.
+loadMobileNetFeatureModel();
 
+let model = tf.sequential();
+model.add(tf.layers.dense({inputShape: [1024], units: 128, activation: 'relu'}));
+model.add(tf.layers.dense({units: CLASS_NAMES.length, activation: 'softmax'}));
+
+model.summary();
+
+// Compile the model with the defined optimizer and specify a loss function to use.
+model.compile({
+  // Adam changes the learning rate over time which is useful.
+  optimizer: 'adam',
+  // Use the correct loss function. If 2 classes of data, must use binaryCrossentropy.
+  // Else categoricalCrossentropy is used if more than 2 classes.
+  loss: (CLASS_NAMES.length === 2) ? 'binaryCrossentropy': 'categoricalCrossentropy',
+  // As this is a classification problem you can record accuracy in the logs too!
+  metrics: ['accuracy']
+});
 
 async function serial_connect() {
   const filters = [
@@ -48,30 +93,39 @@ async function serial_connect() {
     const textEncoder = new TextEncoderStream();
     const writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
     writer = textEncoder.writable.getWriter();
+    isSerialOpened = true;
     console.log("Connected");
   }
 }
 
+
+
+
 function enableCam() {
   if (hasGetUserMedia()) {
-    // getUsermedia parameters.
-    const constraints = {
-      video: true,
-      width: 640,
-      height: 480
-    };
+      // getUsermedia parameters.
+      const constraints = {
+          video: true,
+          width: 640,
+          height: 480
+      };
 
-    // Activate the webcam stream.
-    navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
-      VIDEO.srcObject = stream;
-      VIDEO.addEventListener('loadeddata', function() {
-        videoPlaying = true;
-        ENABLE_CAM_BUTTON.classList.add('removed');
+      // Activate the webcam stream.
+      navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+          VIDEO.srcObject = stream;
+          VIDEO.addEventListener('loadeddata', function() {
+          videoPlaying = true;
+          ENABLE_CAM_BUTTON.classList.add('removed');
+          });
       });
-    });
-  } else {
-    console.warn('getUserMedia() is not supported by your browser');
-  }
+      } else {
+          console.warn('getUserMedia() is not supported by your browser');
+      }
+}
+
+
+function hasGetUserMedia() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 }
 
 function predictLoop() {
@@ -87,22 +141,13 @@ function predictLoop() {
       
       let predictionArray = prediction.arraySync();
       STATUS.innerText = 'Prediction: ' + CLASS_NAMES[highestIndex] + ' with ' + Math.floor(predictionArray[highestIndex] * 100) + '% confidence';
-
-      if (highestIndex === 0) {
-        writer.write('a')
+      if (isSerialOpened === true) {
+        writer.write(highestIndex)
           .then(() => {
-            console.log('Successfully wrote "a"');
+            console.log('Successfully wrote'+highestIndex);
           })
           .catch(error => {
-            console.error('Error writing "a":', error);
-          });
-      } else if (highestIndex === 1) {
-        writer.write('b')
-          .then(() => {
-            console.log('Successfully wrote "b"');
-          })
-          .catch(error => {
-            console.error('Error writing "b":', error);
+            console.error('Error writing '+highestIndex+':', error);
           });
       }
     });
@@ -148,7 +193,6 @@ function reset() {
 
   console.log('Tensors in memory: ' + tf.memory().numTensors);
 }
-
 function dataGatherLoop() {
   if (videoPlaying && gatherDataState !== STOP_DATA_GATHER) {
     let imageFeatures = tf.tidy(function() {
@@ -176,14 +220,6 @@ function dataGatherLoop() {
   }
 }
 
-let dataCollectorButtons = document.querySelectorAll('button.dataCollector');
-for (let i = 0; i < dataCollectorButtons.length; i++) {
-  dataCollectorButtons[i].addEventListener('mousedown', gatherDataForClass);
-  dataCollectorButtons[i].addEventListener('mouseup', gatherDataForClass);
-  // Populate the human readable names for classes.
-  CLASS_NAMES.push(dataCollectorButtons[i].getAttribute('data-name'));
-}
-
 /**
  * Handle Data Gather for button mouseup/mousedown.
  **/
@@ -192,14 +228,6 @@ function gatherDataForClass() {
   gatherDataState = (gatherDataState === STOP_DATA_GATHER) ? classNumber : STOP_DATA_GATHER;
   dataGatherLoop();
 }
-
-let mobilenet = undefined;
-let gatherDataState = STOP_DATA_GATHER;
-let videoPlaying = false;
-let trainingDataInputs = [];
-let trainingDataOutputs = [];
-let examplesCount = [];
-let predict = false;
 
 /**
  * Loads the MobileNet model and warms it up so ready for use.
@@ -210,35 +238,11 @@ async function loadMobileNetFeatureModel() {
 
   mobilenet = await tf.loadGraphModel(URL, {fromTFHub: true});
   STATUS.innerText = 'MobileNet v3 loaded successfully!';
-
+  enableCam();
   // Warm up the model by passing zeros through it once.
   tf.tidy(function () {
     let answer = mobilenet.predict(tf.zeros([1, MOBILE_NET_INPUT_HEIGHT, MOBILE_NET_INPUT_WIDTH, 3]));
     console.log(answer.shape);
   });
-}
-
-// Call the function immediately to start loading.
-loadMobileNetFeatureModel();
-
-let model = tf.sequential();
-model.add(tf.layers.dense({inputShape: [1024], units: 128, activation: 'relu'}));
-model.add(tf.layers.dense({units: CLASS_NAMES.length, activation: 'softmax'}));
-
-model.summary();
-
-// Compile the model with the defined optimizer and specify a loss function to use.
-model.compile({
-  // Adam changes the learning rate over time which is useful.
-  optimizer: 'adam',
-  // Use the correct loss function. If 2 classes of data, must use binaryCrossentropy.
-  // Else categoricalCrossentropy is used if more than 2 classes.
-  loss: (CLASS_NAMES.length === 2) ? 'binaryCrossentropy': 'categoricalCrossentropy',
-  // As this is a classification problem you can record accuracy in the logs too!
-  metrics: ['accuracy']
-});
-
-function hasGetUserMedia() {
-  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 }
 
